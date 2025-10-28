@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@packages/*": ["packages/*"],
+      "@packages/core/*": ["packages/core/src/*"],
+      "@packages/types": ["packages/types/src"],
+      "@packages/keyword-fetcher": ["packages/keyword-fetcher/src"],
+      "@packages/script-generator": ["packages/script-generator/src"],
+      "@packages/tts-renderer": ["packages/tts-renderer/src"],
+      "@packages/video-assembler": ["packages/video-assembler/src"],
+      "@packages/thumbnail-maker": ["packages/thumbnail-maker/src"],
+      "@packages/metadata-builder": ["packages/metadata-builder/src"],
+      "@packages/uploader": ["packages/uploader/src"],
+      "@packages/ab-tester": ["packages/ab-tester/src"]
+    }
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
