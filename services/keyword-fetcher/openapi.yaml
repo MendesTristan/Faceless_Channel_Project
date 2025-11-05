@@ -1,0 +1,190 @@
+openapi: 3.0.3
+info:
+  title: Keyword Fetcher Service API
+  description: Microservice pour la récupération de keywords SEO pour les vidéos YouTube
+  version: 1.0.0
+  contact:
+    name: Faceless Pipeline Team
+    email: dev@faceless-pipeline.com
+
+servers:
+  - url: http://localhost:3002
+    description: Development server
+  - url: http://keyword-fetcher:3002
+    description: Docker internal network
+
+tags:
+  - name: Keywords
+    description: Endpoints pour la récupération de keywords
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Vérifie que le service est en bonne santé
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: keyword-fetcher
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: '2025-01-01T00:00:00.000Z'
+
+  /keywords/fetch:
+    post:
+      tags:
+        - Keywords
+      summary: Fetch keywords
+      description: Récupère des keywords SEO pertinents pour un sujet donné
+      operationId: fetchKeywords
+      parameters:
+        - in: header
+          name: X-Pipeline-ID
+          schema:
+            type: string
+          description: ID du pipeline (pour traçabilité)
+          example: abc123xyz
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - topic
+                - format
+              properties:
+                topic:
+                  type: string
+                  description: Le sujet pour lequel rechercher des keywords
+                  example: ETF débutants 2025
+                  minLength: 1
+                format:
+                  type: string
+                  enum: [short, long]
+                  description: Format de la vidéo (short ou long)
+                  example: short
+                limit:
+                  type: integer
+                  description: Nombre maximum de keywords à retourner
+                  default: 10
+                  minimum: 1
+                  maximum: 50
+                  example: 10
+      responses:
+        '200':
+          description: Keywords récupérés avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keywords:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Keyword'
+              examples:
+                success:
+                  value:
+                    keywords:
+                      - keyword: ETF débutants 2025
+                        searchVolume: 10000
+                        competition: medium
+                        cpc: 1.5
+                      - keyword: ETF débutants 2025 tutorial
+                        searchVolume: 5000
+                        competition: low
+                        cpc: 0.8
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Validation failed
+                  details:
+                    type: array
+                    items:
+                      type: object
+              examples:
+                missingTopic:
+                  value:
+                    error: Validation failed
+                    details:
+                      - message: Required
+                        path: ["topic"]
+                invalidFormat:
+                  value:
+                    error: Validation failed
+                    details:
+                      - message: Invalid enum value. Expected 'short' | 'long'
+                        path: ["format"]
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Failed to fetch keywords
+                  message:
+                    type: string
+                    example: API rate limit exceeded
+
+components:
+  schemas:
+    Keyword:
+      type: object
+      required:
+        - keyword
+      properties:
+        keyword:
+          type: string
+          description: Le mot-clé
+          example: ETF débutants 2025
+        searchVolume:
+          type: integer
+          description: Volume de recherche mensuel
+          example: 10000
+        competition:
+          type: string
+          enum: [low, medium, high]
+          description: Niveau de compétition
+          example: medium
+        cpc:
+          type: number
+          format: float
+          description: Coût par clic (en USD)
+          example: 1.5
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API Key pour authentification (à implémenter)
+
+security:
+  - ApiKeyAuth: []
+

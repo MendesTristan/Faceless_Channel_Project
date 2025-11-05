@@ -1,0 +1,303 @@
+version: '3.9'
+
+networks:
+  faceless-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  rabbitmq-data:
+  postgres-data:
+  minio-data:
+
+services:
+  # ==================== Infrastructure ====================
+  
+  redis:
+    image: redis:7-alpine
+    container_name: faceless-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - faceless-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: faceless-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - faceless-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: faceless-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: faceless
+      POSTGRES_USER: faceless
+      POSTGRES_PASSWORD: faceless123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - faceless-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faceless"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: faceless-minio
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio-data:/data
+    networks:
+      - faceless-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==================== API Gateway ====================
+  
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: faceless-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      LOG_LEVEL: info
+      CORS_ORIGIN: "*"
+      ORCHESTRATOR_URL: http://orchestrator:3001
+      KEYWORD_FETCHER_URL: http://keyword-fetcher:3002
+      SCRIPT_GENERATOR_URL: http://script-generator:3003
+      TTS_RENDERER_URL: http://tts-renderer:3004
+      VIDEO_ASSEMBLER_URL: http://video-assembler:3005
+      THUMBNAIL_MAKER_URL: http://thumbnail-maker:3006
+      METADATA_BUILDER_URL: http://metadata-builder:3007
+      UPLOADER_URL: http://uploader:3008
+      AB_TESTER_URL: http://ab-tester:3009
+    networks:
+      - faceless-network
+    depends_on:
+      - orchestrator
+    restart: unless-stopped
+
+  # ==================== Orchestrator ====================
+  
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: faceless-orchestrator
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      LOG_LEVEL: info
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672
+      KEYWORD_FETCHER_URL: http://keyword-fetcher:3002
+      SCRIPT_GENERATOR_URL: http://script-generator:3003
+      TTS_RENDERER_URL: http://tts-renderer:3004
+      VIDEO_ASSEMBLER_URL: http://video-assembler:3005
+      THUMBNAIL_MAKER_URL: http://thumbnail-maker:3006
+      METADATA_BUILDER_URL: http://metadata-builder:3007
+      UPLOADER_URL: http://uploader:3008
+      AB_TESTER_URL: http://ab-tester:3009
+    networks:
+      - faceless-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ==================== Microservices ====================
+  
+  keyword-fetcher:
+    build:
+      context: ./services/keyword-fetcher
+      dockerfile: Dockerfile
+    container_name: faceless-keyword-fetcher
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      LOG_LEVEL: info
+      # Add API keys here
+      # GOOGLE_ADS_API_KEY: ${GOOGLE_ADS_API_KEY}
+      # SERPAPI_KEY: ${SERPAPI_KEY}
+    networks:
+      - faceless-network
+    restart: unless-stopped
+
+  script-generator:
+    build:
+      context: ./services/script-generator
+      dockerfile: Dockerfile
+    container_name: faceless-script-generator
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      LOG_LEVEL: info
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+    networks:
+      - faceless-network
+    restart: unless-stopped
+
+  tts-renderer:
+    build:
+      context: ./services/tts-renderer
+      dockerfile: Dockerfile
+    container_name: faceless-tts-renderer
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      LOG_LEVEL: info
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      # ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+    networks:
+      - faceless-network
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+  video-assembler:
+    build:
+      context: ./services/video-assembler
+      dockerfile: Dockerfile
+    container_name: faceless-video-assembler
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      LOG_LEVEL: info
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+    networks:
+      - faceless-network
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+  thumbnail-maker:
+    build:
+      context: ./services/thumbnail-maker
+      dockerfile: Dockerfile
+    container_name: faceless-thumbnail-maker
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      LOG_LEVEL: info
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      # OPENAI_API_KEY: ${OPENAI_API_KEY}
+    networks:
+      - faceless-network
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+  metadata-builder:
+    build:
+      context: ./services/metadata-builder
+      dockerfile: Dockerfile
+    container_name: faceless-metadata-builder
+    ports:
+      - "3007:3007"
+    environment:
+      PORT: 3007
+      LOG_LEVEL: info
+    networks:
+      - faceless-network
+    restart: unless-stopped
+
+  uploader:
+    build:
+      context: ./services/uploader
+      dockerfile: Dockerfile
+    container_name: faceless-uploader
+    ports:
+      - "3008:3008"
+    environment:
+      PORT: 3008
+      LOG_LEVEL: info
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      # YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID}
+      # YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET}
+    networks:
+      - faceless-network
+    depends_on:
+      - minio
+    restart: unless-stopped
+
+  ab-tester:
+    build:
+      context: ./services/ab-tester
+      dockerfile: Dockerfile
+    container_name: faceless-ab-tester
+    ports:
+      - "3009:3009"
+    environment:
+      PORT: 3009
+      LOG_LEVEL: info
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: faceless
+      POSTGRES_USER: faceless
+      POSTGRES_PASSWORD: faceless123
+    networks:
+      - faceless-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
